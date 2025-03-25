@@ -2,10 +2,11 @@ from fastapi import FastAPI
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
 from fractions import Fraction
+from datetime import datetime
 
 app = FastAPI()
 
-# Enable CORS for frontend access
+# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,105 +15,125 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Settings
-API_KEY = "bedeb6677cd194bfc4c8d12d3898a594"
-SPORTS = ["soccer_epl", "soccer_uefa_champs_league", "soccer_england_league1"]
-REGIONS = "uk"
-MARKETS = "h2h"
 BOOKMAKER_PRIORITY = ["Bet365", "Paddy Power", "Bet Victor", "888sport", "Betway", "BoyleSports"]
-
-def to_fraction(decimal_odds):
-    return str(Fraction(decimal_odds - 1).limit_denominator()) if decimal_odds else "-"
+API_KEY = "bedeb6677cd194bfc4c8d12d3898a594"
+SPORTS = ["soccer_epl", "soccer_champions_league", "soccer_england_championship"]
+BASE_URL = "https://api.the-odds-api.com/v4/sports"
 
 @app.get("/api/hedge-opportunities")
 async def get_hedge_opportunities():
     opportunities = []
-    shown_non_profitable = False
 
-    async with httpx.AsyncClient() as client:
-        for sport in SPORTS:
-            url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
-            params = {
-                "apiKey": API_KEY,
-                "regions": REGIONS,
-                "markets": MARKETS,
-                "oddsFormat": "decimal"
-            }
+    for sport in SPORTS:
+        url = f"{BASE_URL}/{sport}/odds"
+        params = {
+            "apiKey": API_KEY,
+            "regions": "uk",
+            "markets": "h2h",
+            "oddsFormat": "decimal"
+        }
 
-            try:
+        try:
+            async with httpx.AsyncClient() as client:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
                 matches = response.json()
-            except Exception as e:
-                print(f"Error fetching data for {sport}: {e}")
-                continue
 
             for match in matches:
+                match_name = f"{match.get('home_team')} vs {match.get('away_team')}"
+                commence_time = match.get("commence_time", "")
                 bookmakers = match.get("bookmakers", [])
                 best_odds = {}
 
                 for bookmaker in bookmakers:
-                    name = bookmaker["title"]
-                    if name not in BOOKMAKER_PRIORITY:
+                    key = bookmaker["title"]
+                    if key not in BOOKMAKER_PRIORITY:
                         continue
 
                     for market in bookmaker.get("markets", []):
                         if market["key"] != "h2h":
                             continue
-                        for outcome in market.get("outcomes", []):
+                        for outcome in market["outcomes"]:
                             team = outcome["name"]
-                            price = outcome["price"]
-                            if team not in best_odds or price > best_odds[team]["price"]:
+                            odds = outcome["price"]
+                            if team not in best_odds or odds > best_odds[team]["odds"]:
                                 best_odds[team] = {
-                                    "bookmaker": name,
-                                    "price": price
+                                    "bookmaker": key,
+                                    "odds": odds
                                 }
 
                 if len(best_odds) == 2:
-                    teams = list(best_odds.keys())
-                    odds_1 = best_odds[teams[0]]["price"]
-                    odds_2 = best_odds[teams[1]]["price"]
+                    team1, team2 = list(best_odds.keys())
+                    odds1 = best_odds[team1]["odds"]
+                    odds2 = best_odds[team2]["odds"]
 
-                    implied_prob = (1 / odds_1) + (1 / odds_2)
-                    profit_margin = round((1 - implied_prob) * 100, 2)
+                    implied_prob = round((1 / odds1 + 1 / odds2) * 100, 2)
+                    profit_margin = round(100 - implied_prob, 2)
 
-                    show_bet = profit_margin > 0 or (not shown_non_profitable and profit_margin > -2)
-                    if not show_bet:
-                        continue
+                    stake1 = 100
+                    stake2 = round((stake1 * odds1) / odds2, 2)
+                    win_return = round(stake1 * odds1, 2)
 
-                    stake_1 = round(200 / odds_1, 2)
-                    stake_2 = round(200 / odds_2, 2)
-                    win_return = round(stake_1 * odds_1, 2)
+                    def to_fraction(decimal_odds):
+                        return str(Fraction(decimal_odds - 1).limit_denominator()) if decimal_odds else "-"
 
                     bets = [
                         {
-                            "bookmaker": best_odds[teams[0]]["bookmaker"],
-                            "outcome": teams[0],
-                            "odds": odds_1,
-                            "fractional_odds": to_fraction(odds_1),
-                            "stake": stake_1,
+                            "bookmaker": best_odds[team1]["bookmaker"],
+                            "outcome": team1,
+                            "odds": odds1,
+                            "fractional_odds": to_fraction(odds1),
+                            "stake": stake1,
                             "win_return": win_return
                         },
                         {
-                            "bookmaker": best_odds[teams[1]]["bookmaker"],
-                            "outcome": teams[1],
-                            "odds": odds_2,
-                            "fractional_odds": to_fraction(odds_2),
-                            "stake": stake_2,
+                            "bookmaker": best_odds[team2]["bookmaker"],
+                            "outcome": team2,
+                            "odds": odds2,
+                            "fractional_odds": to_fraction(odds2),
+                            "stake": stake2,
                             "win_return": win_return
                         }
                     ]
 
-                    opportunities.append({
-                        "match": f"{match['home_team']} vs {match['away_team']}",
-                        "commence_time": match["commence_time"],
-                        "impliedProbability": round(implied_prob * 100, 2),
-                        "profitMargin": profit_margin,
-                        "bets": bets
-                    })
+                    if profit_margin > 0 or sport == SPORTS[0]:  # show one non-profitable from top sport
+                        opportunities.append({
+                            "match": match_name,
+                            "commence_time": commence_time,
+                            "impliedProbability": implied_prob,
+                            "profitMargin": profit_margin,
+                            "bets": bets
+                        })
 
-                    if profit_margin <= 0:
-                        shown_non_profitable = True
+        except Exception as e:
+            print(f"Error fetching data for {sport}: {e}")
+
+    # Always return at least one dummy bet for debugging
+    if not opportunities:
+        opportunities.append({
+            "match": "Debug FC vs Test United",
+            "commence_time": datetime.utcnow().isoformat(),
+            "impliedProbability": 110.0,
+            "profitMargin": -10.0,
+            "bets": [
+                {
+                    "bookmaker": "Test Bookmaker A",
+                    "outcome": "Debug FC",
+                    "odds": 1.5,
+                    "fractional_odds": "1/2",
+                    "stake": 100,
+                    "win_return": 150
+                },
+                {
+                    "bookmaker": "Test Bookmaker B",
+                    "outcome": "Test United",
+                    "odds": 3.5,
+                    "fractional_odds": "5/2",
+                    "stake": 42.86,
+                    "win_return": 150
+                }
+            ]
+        })
 
     return opportunities
 
