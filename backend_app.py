@@ -16,7 +16,7 @@ app.add_middleware(
 
 # Settings
 API_KEY = "bedeb6677cd194bfc4c8d12d3898a594"
-SPORTS = ["soccer_epl", "soccer_champions_league", "soccer_england_league1"]
+SPORTS = ["soccer_epl", "soccer_uefa_champs_league", "soccer_england_league1"]
 REGIONS = "uk"
 MARKETS = "h2h"
 BOOKMAKER_PRIORITY = ["Bet365", "Paddy Power", "Bet Victor", "888sport", "Betway", "BoyleSports"]
