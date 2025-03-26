@@ -1,11 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from fractions import Fraction
 
 app = FastAPI()
 
-# Enable CORS
+# Enable CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,19 +14,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Valid sports keys
+# Expanded list of sports
 SPORTS = [
     "soccer_epl",
-    "soccer_uefa_champs_league"
+    "soccer_uefa_champs_league",
+    "basketball_nba",
+    "tennis_atp_us_open",
+    "mma_mixed_martial_arts",
+    "cricket_international_test"
 ]
 
+# Bookmakers to prioritize
 BOOKMAKER_PRIORITY = ["Bet365", "Paddy Power", "Bet Victor", "888sport", "Betway", "BoyleSports"]
 
-# Working Odds API key
+# Your The Odds API key
 API_KEY = "d9e11b9c538cb889fe1d99694728fe64"
 
 @app.get("/api/hedge-opportunities")
-async def get_hedge_opportunities():
+async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
+    """
+    Get profitable hedge bet opportunities across multiple sports.
+    Optional: ?min_profit=-2 to filter by minimum profit margin.
+    """
     opportunities = []
 
     async with httpx.AsyncClient() as client:
@@ -49,7 +58,6 @@ async def get_hedge_opportunities():
                     bookmakers = match.get("bookmakers", [])
                     best_odds = {}
 
-                    # Find the best odds for each team from prioritized bookmakers
                     for bookmaker in bookmakers:
                         key = bookmaker["key"].replace("_", " ").title()
                         if key not in BOOKMAKER_PRIORITY:
@@ -68,22 +76,21 @@ async def get_hedge_opportunities():
                                     }
 
                     if len(best_odds) == 2:
-                        # Extract team names and their odds
-                        team_names = list(best_odds.keys())
-                        team1, team2 = team_names[0], team_names[1]
+                        team1, team2 = list(best_odds.keys())
                         odds1 = best_odds[team1]["odds"]
                         odds2 = best_odds[team2]["odds"]
 
-                        # Calculate implied probability and profit margin
                         implied_prob = round((1 / odds1 + 1 / odds2) * 100, 2)
                         profit_margin = round(100 - implied_prob, 2)
 
-                        # Using a relaxed filter for testing (show bets with margin > -10%)
-                        if profit_margin > -10:
-                            stake1 = 100  # base stake for team1
-                            stake2 = round((stake1 * odds1) / odds2, 2)  # calculated stake for team2
+                        if profit_margin >= min_profit:
+                            stake1 = 100
+                            stake2 = round((stake1 * odds1) / odds2, 2)
                             win_return = round(stake1 * odds1, 2)
                             estimated_profit = round(win_return - stake1, 2)
+
+                            def to_fraction(odds):
+                                return str(Fraction(odds - 1).limit_denominator())
 
                             opportunities.append({
                                 "team1": team1,
@@ -100,7 +107,7 @@ async def get_hedge_opportunities():
             except Exception as e:
                 print(f"Error fetching {sport}: {e}")
 
-    # Fallback opportunity for debugging if none are found
+    # Add fallback test match if no real data
     if not opportunities:
         opportunities.append({
             "team1": "Test FC",
@@ -111,7 +118,7 @@ async def get_hedge_opportunities():
             "platform2": "Paddy Power",
             "stake1": 100,
             "stake2": 95.24,
-            "estimatedProfit": 200 - 100  # assuming win_return is 200
+            "estimatedProfit": 100
         })
 
     return opportunities
