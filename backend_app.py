@@ -1,11 +1,10 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from fractions import Fraction
 
 app = FastAPI()
 
-# Enable CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,7 +13,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Expanded list of sports
 SPORTS = [
     "soccer_epl",
     "soccer_uefa_champs_league",
@@ -24,18 +22,12 @@ SPORTS = [
     "cricket_international_test"
 ]
 
-# Bookmakers to prioritize
 BOOKMAKER_PRIORITY = ["Bet365", "Paddy Power", "Bet Victor", "888sport", "Betway", "BoyleSports"]
 
-# Your The Odds API key
 API_KEY = "d9e11b9c538cb889fe1d99694728fe64"
 
 @app.get("/api/hedge-opportunities")
 async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
-    """
-    Get profitable hedge bet opportunities across multiple sports.
-    Optional: ?min_profit=-2 to filter by minimum profit margin.
-    """
     opportunities = []
 
     async with httpx.AsyncClient() as client:
@@ -49,20 +41,24 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
                     "oddsFormat": "decimal"
                 }
                 response = await client.get(url, params=params)
-                response.raise_for_status()
+                if not response.status_code == 200:
+                    print(f"API error for {sport}: {response.status_code} - {response.text}")
+                    continue
                 matches = response.json()
 
                 for match in matches:
                     home = match.get("home_team")
                     away = match.get("away_team")
                     bookmakers = match.get("bookmakers", [])
-                    best_odds = {}
+                    if not (home and away and bookmakers):
+                        print(f"Skipping {sport} match: missing data - {match}")
+                        continue
 
+                    best_odds = {}
                     for bookmaker in bookmakers:
                         key = bookmaker["key"].replace("_", " ").title()
                         if key not in BOOKMAKER_PRIORITY:
                             continue
-
                         for market in bookmaker.get("markets", []):
                             if market["key"] != "h2h":
                                 continue
@@ -87,12 +83,10 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
                             stake1 = 100
                             stake2 = round((stake1 * odds1) / odds2, 2)
                             win_return = round(stake1 * odds1, 2)
-                            estimated_profit = round(win_return - stake1, 2)
-
-                            def to_fraction(odds):
-                                return str(Fraction(odds - 1).limit_denominator())
+                            estimated_profit = round(win_return - (stake1 + stake2), 2)  # Fixed profit calc
 
                             opportunities.append({
+                                "sport": sport,  # Added for frontend grouping
                                 "team1": team1,
                                 "team2": team2,
                                 "odds1": odds1,
@@ -101,15 +95,18 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
                                 "platform2": best_odds[team2]["bookmaker"],
                                 "stake1": stake1,
                                 "stake2": stake2,
-                                "estimatedProfit": estimated_profit
+                                "estimatedProfit": estimated_profit,
+                                "profitPercentage": profit_margin  # Added for filtering
                             })
 
             except Exception as e:
-                print(f"Error fetching {sport}: {e}")
+                print(f"Error fetching {sport}: {str(e)}")
+                continue
 
-    # Add fallback test match if no real data
+    # Fallback test match
     if not opportunities:
         opportunities.append({
+            "sport": "test",
             "team1": "Test FC",
             "team2": "Debug United",
             "odds1": 2.0,
@@ -118,12 +115,12 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
             "platform2": "Paddy Power",
             "stake1": 100,
             "stake2": 95.24,
-            "estimatedProfit": 100
+            "estimatedProfit": 100,
+            "profitPercentage": 2.38
         })
 
     return opportunities
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend_app:app", host="0.0.0.0", port=10000)
-
