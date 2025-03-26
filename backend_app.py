@@ -5,7 +5,6 @@ from fractions import Fraction
 
 app = FastAPI()
 
-# ✅ Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,7 +13,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Valid sports only
 SPORTS = [
     "soccer_epl",
     "soccer_uefa_champs_league"
@@ -22,7 +20,6 @@ SPORTS = [
 
 BOOKMAKER_PRIORITY = ["Bet365", "Paddy Power", "Bet Victor", "888sport", "Betway", "BoyleSports"]
 
-# ✅ Working Odds API key
 API_KEY = "d9e11b9c538cb889fe1d99694728fe64"
 
 @app.get("/api/hedge-opportunities")
@@ -76,7 +73,8 @@ async def get_hedge_opportunities():
                         implied_prob = round((1 / odds1 + 1 / odds2) * 100, 2)
                         profit_margin = round(100 - implied_prob, 2)
 
-                        if profit_margin > -2:
+                        # 🟢 Now showing bets with margin > -10%
+                        if profit_margin > -10:
                             stake1 = 100
                             stake2 = round((stake1 * odds1) / odds2, 2)
                             win_return = round(stake1 * odds1, 2)
@@ -114,7 +112,6 @@ async def get_hedge_opportunities():
             except Exception as e:
                 print(f"Error fetching {sport}: {e}")
 
-    # ✅ Fallback test bet
     if not opportunities:
         opportunities.append({
             "match": "Test FC vs Debug United",
