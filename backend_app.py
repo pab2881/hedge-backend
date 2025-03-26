@@ -5,25 +5,29 @@ from fractions import Fraction
 
 app = FastAPI()
 
-# Enable CORS
+# ✅ Enable CORS for frontend (like Vercel) to access this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins (you can restrict to your frontend domain if needed)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Sports to check
+# ✅ Sports to scan for hedge opportunities
 SPORTS = [
     "soccer_epl",
     "soccer_uefa_champs_league",
     "soccer_england_championship"
 ]
 
+# ✅ Bookmakers to prioritize
 BOOKMAKER_PRIORITY = ["Bet365", "Paddy Power", "Bet Victor", "888sport", "Betway", "BoyleSports"]
+
+# ✅ The Odds API Key
 API_KEY = "bedeb6677cd194bfc4c8d12d3898a594"
 
+# ✅ Main endpoint for hedge opportunities
 @app.get("/api/hedge-opportunities")
 async def get_hedge_opportunities():
     opportunities = []
@@ -43,9 +47,11 @@ async def get_hedge_opportunities():
                 matches = response.json()
 
                 for match in matches:
-                    match_name = f"{match.get('home_team')} vs {match.get('away_team')}"
-                    commence_time = match.get("commence_time", "")
+                    home = match.get("home_team")
+                    away = match.get("away_team")
                     bookmakers = match.get("bookmakers", [])
+                    match_name = f"{home} vs {away}"
+                    commence_time = match.get("commence_time", "")
                     best_odds = {}
 
                     for bookmaker in bookmakers:
@@ -73,7 +79,7 @@ async def get_hedge_opportunities():
                         implied_prob = round((1 / odds1 + 1 / odds2) * 100, 2)
                         profit_margin = round(100 - implied_prob, 2)
 
-                        if profit_margin > -2:  # Show any bet > -2% margin
+                        if profit_margin > -2:
                             stake1 = 100
                             stake2 = round((stake1 * odds1) / odds2, 2)
                             win_return = round(stake1 * odds1, 2)
@@ -111,7 +117,7 @@ async def get_hedge_opportunities():
             except Exception as e:
                 print(f"Error fetching {sport}: {e}")
 
-    # Add one fake bet for debugging if nothing was found
+    # ✅ Add one fallback debug example if no bets were found
     if not opportunities:
         opportunities.append({
             "match": "Test FC vs Debug United",
@@ -139,4 +145,3 @@ async def get_hedge_opportunities():
         })
 
     return opportunities
-
