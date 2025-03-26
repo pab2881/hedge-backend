@@ -1,33 +1,30 @@
 from fastapi import FastAPI
-import httpx
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 from fractions import Fraction
 
 app = FastAPI()
 
-# ✅ Enable CORS for frontend (like Vercel) to access this backend
+# ✅ Enable CORS for frontend access (e.g. from Vercel)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (you can restrict to your frontend domain if needed)
+    allow_origins=["*"],  # You can replace with your frontend URL later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Sports to scan for hedge opportunities
+# ✅ Settings
 SPORTS = [
     "soccer_epl",
     "soccer_uefa_champs_league",
     "soccer_england_championship"
 ]
 
-# ✅ Bookmakers to prioritize
 BOOKMAKER_PRIORITY = ["Bet365", "Paddy Power", "Bet Victor", "888sport", "Betway", "BoyleSports"]
-
-# ✅ The Odds API Key
 API_KEY = "bedeb6677cd194bfc4c8d12d3898a594"
 
-# ✅ Main endpoint for hedge opportunities
+# ✅ Main route
 @app.get("/api/hedge-opportunities")
 async def get_hedge_opportunities():
     opportunities = []
@@ -117,7 +114,7 @@ async def get_hedge_opportunities():
             except Exception as e:
                 print(f"Error fetching {sport}: {e}")
 
-    # ✅ Add one fallback debug example if no bets were found
+    # ✅ Add a debug opportunity if nothing found
     if not opportunities:
         opportunities.append({
             "match": "Test FC vs Debug United",
@@ -145,3 +142,4 @@ async def get_hedge_opportunities():
         })
 
     return opportunities
+
