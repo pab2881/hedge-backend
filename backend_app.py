@@ -13,27 +13,69 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Expanded sports list with UK and European football, plus others
 SPORTS = [
-    "soccer_epl",
-    "soccer_uefa_champs_league",
-    "basketball_nba",
-    "tennis_atp_us_open",
-    "mma_mixed_martial_arts",
-    "cricket_international_test"
+    # UK Football
+    "soccer_epl",                # English Premier League
+    "soccer_england_championship", # EFL Championship
+    "soccer_england_league1",    # League One
+    "soccer_england_league2",    # League Two
+    "soccer_fa_cup",            # FA Cup
+    
+    # European Football
+    "soccer_uefa_champs_league", # Champions League
+    "soccer_uefa_europa_league", # Europa League
+    "soccer_spain_la_liga",      # La Liga
+    "soccer_italy_serie_a",      # Serie A
+    "soccer_germany_bundesliga", # Bundesliga
+    "soccer_france_ligue_one",   # Ligue 1
+    "soccer_portugal_primeira_liga", # Primeira Liga
+    "soccer_netherlands_eredivisie", # Eredivisie
+    
+    # Basketball
+    "basketball_nba",            # NBA
+    "basketball_wnba",           # WNBA
+    "basketball_euroleague",     # Euroleague
+    "basketball_ncaab",          # NCAA Basketball
+    
+    # Baseball
+    "baseball_mlb",              # MLB
+    "baseball_kbo",              # KBO League
+    "baseball_npb",              # NPB (Japan)
+    
+    # Tennis
+    "tennis_atp_us_open",        # ATP US Open
+    "tennis_wta_us_open",        # WTA US Open
+    "tennis_atp_french_open",    # ATP French Open
+    "tennis_wta_french_open",    # WTA French Open
+    "tennis_atp_wimbledon",      # ATP Wimbledon
+    "tennis_wta_wimbledon",      # WTA Wimbledon
+    
+    # MMA & Boxing
+    "mma_mixed_martial_arts",    # MMA
+    "boxing",                    # Boxing
+    
+    # Golf
+    "golf_pga_championship",     # PGA Championship
+    "golf_masters",              # Masters
+    "golf_us_open",             # US Open
+    
+    # Darts
+    "darts_pdc_world_championship", # PDC World Championship
+    "darts_premier_league",     # Premier League Darts
 ]
-
-BOOKMAKER_PRIORITY = ["Bet365", "Paddy Power", "Bet Victor", "888sport", "Betway", "BoyleSports"]
 
 API_KEY = "d9e11b9c538cb889fe1d99694728fe64"
 
 @app.get("/api/hedge-opportunities")
-async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
+async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str = Query(None)):
     opportunities = []
 
     async with httpx.AsyncClient() as client:
-        for sport in SPORTS:
+        sports_to_fetch = [sport] if sport and sport in SPORTS else SPORTS
+        for sport_key in sports_to_fetch:
             try:
-                url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
+                url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
                 params = {
                     "apiKey": API_KEY,
                     "regions": "uk",
@@ -41,8 +83,8 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
                     "oddsFormat": "decimal"
                 }
                 response = await client.get(url, params=params)
-                if not response.status_code == 200:
-                    print(f"API error for {sport}: {response.status_code} - {response.text}")
+                if response.status_code != 200:
+                    print(f"API error for {sport_key}: {response.status_code} - {response.text}")
                     continue
                 matches = response.json()
 
@@ -51,14 +93,13 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
                     away = match.get("away_team")
                     bookmakers = match.get("bookmakers", [])
                     if not (home and away and bookmakers):
-                        print(f"Skipping {sport} match: missing data - {match}")
+                        print(f"Skipping {sport_key} match: missing data - {match}")
                         continue
 
                     best_odds = {}
                     for bookmaker in bookmakers:
                         key = bookmaker["key"].replace("_", " ").title()
-                        if key not in BOOKMAKER_PRIORITY:
-                            continue
+                        # Search all bookmakers for best odds
                         for market in bookmaker.get("markets", []):
                             if market["key"] != "h2h":
                                 continue
@@ -71,7 +112,7 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
                                         "odds": odds
                                     }
 
-                    if len(best_odds) == 2:
+                    if len(best_odds) == 2:  # Two-outcome logic for now
                         team1, team2 = list(best_odds.keys())
                         odds1 = best_odds[team1]["odds"]
                         odds2 = best_odds[team2]["odds"]
@@ -83,10 +124,10 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
                             stake1 = 100
                             stake2 = round((stake1 * odds1) / odds2, 2)
                             win_return = round(stake1 * odds1, 2)
-                            estimated_profit = round(win_return - (stake1 + stake2), 2)  # Fixed profit calc
+                            estimated_profit = round(win_return - (stake1 + stake2), 2)
 
                             opportunities.append({
-                                "sport": sport,  # Added for frontend grouping
+                                "sport": sport_key,
                                 "team1": team1,
                                 "team2": team2,
                                 "odds1": odds1,
@@ -96,11 +137,11 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0)):
                                 "stake1": stake1,
                                 "stake2": stake2,
                                 "estimatedProfit": estimated_profit,
-                                "profitPercentage": profit_margin  # Added for filtering
+                                "profitPercentage": profit_margin
                             })
 
             except Exception as e:
-                print(f"Error fetching {sport}: {str(e)}")
+                print(f"Error fetching {sport_key}: {str(e)}")
                 continue
 
     # Fallback test match
