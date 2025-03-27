@@ -18,7 +18,7 @@ SPORTS = {
     "soccer_epl": {"league": 39, "season": "2024"}  # EPL, current season
 }
 
-API_FOOTBALL_KEY = "533408ae1amshb7e0315d7d0de43p1f3964jsn330773ba97e5"  # Replace if new key needed
+API_FOOTBALL_KEY = "533408ae1amshb7e0315d7d0de43p1f3964jsn330773ba97e5"  # Your key
 
 @app.get("/api/hedge-opportunities")
 async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str = Query(None)):
