@@ -13,78 +13,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Sports list (split across APIs)
+# Sports mapped to AllSportsAPI tournament/season IDs (examples - expand as needed)
 SPORTS = {
-    "sportmonks": ["soccer_scotland_premiership", "darts_pdc_world_championship", "golf_pga_championship"],
-    "api_football": ["soccer_epl", "soccer_spain_la_liga", "soccer_italy_serie_a", "soccer_germany_bundesliga", "soccer_france_ligue_one"],
-    "odds_api": ["basketball_nba", "baseball_mlb", "tennis_atp_us_open", "mma_mixed_martial_arts", "boxing"]
+    "soccer_epl": {"tournament": 8, "season": 61643},  # Premier League 2024/25
+    "soccer_spain_la_liga": {"tournament": 87, "season": 61642},  # La Liga
+    "soccer_italy_serie_a": {"tournament": 94, "season": 61641},  # Serie A
+    "basketball_nba": {"tournament": 132, "season": 61640},  # NBA (season ID guessed)
+    "baseball_mlb": {"tournament": 141, "season": 61639},  # MLB (guessed)
+    "tennis_atp_us_open": {"tournament": 188, "season": 61638},  # ATP US Open (guessed)
+    # Add more from AllSportsAPI docs
 }
 
-# API Keys (replace with yours after signup)
-ODDS_API_KEY = "d9e11b9c538cb889fe1d99694728fe64"
-SPORTMONKS_API_KEY = "YOUR_SPORTMONKS_KEY"  # Get from sportmonks.com
-API_FOOTBALL_KEY = "YOUR_API_FOOTBALL_KEY"  # Get from rapidapi.com
+ALLSPORTS_API_KEY = "533408ae1amshb7e0315d7d0de43p1f3964jsn330773ba97e5"  # Your RapidAPI key
 
 @app.get("/api/hedge-opportunities")
 async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str = Query(None)):
     opportunities = []
 
     async with httpx.AsyncClient() as client:
-        sports_to_fetch = [sport] if sport and any(sport in v for v in SPORTS.values()) else sum(SPORTS.values(), [])
-
-        # Sportmonks fetch
-        for sport_key in [s for s in sports_to_fetch if s in SPORTS["sportmonks"]]:
+        sports_to_fetch = [sport] if sport and sport in SPORTS else SPORTS.keys()
+        
+        for sport_key in sports_to_fetch:
             try:
-                url = f"https://api.sportmonks.com/v3/football/fixtures?api_token={SPORTMONKS_API_KEY}&include=odds"
-                response = await client.get(url)
+                tournament_id = SPORTS[sport_key]["tournament"]
+                season_id = SPORTS[sport_key]["season"]
+                url = f"https://allsportsapi2.p.rapidapi.com/api/tournament/{tournament_id}/season/{season_id}/odds/pre"
+                headers = {
+                    "X-RapidAPI-Host": "allsportsapi2.p.rapidapi.com",
+                    "X-RapidAPI-Key": ALLSPORTS_API_KEY
+                }
+                response = await client.get(url, headers=headers)
                 if response.status_code != 200:
-                    print(f"Sportmonks error for {sport_key}: {response.status_code} - {response.text}")
+                    print(f"AllSportsAPI error for {sport_key}: {response.status_code} - {response.text}")
                     continue
-                data = response.json().get("data", [])
-                matches = [{"home_team": m["participants"][0]["name"], "away_team": m["participants"][1]["name"], 
-                           "bookmakers": [{"key": "sportmonks", "markets": [{"key": "h2h", "outcomes": m["odds"]}]}]} 
-                          for m in data if "odds" in m]
-                print(f"Sportmonks fetched {len(matches)} matches for {sport_key}")
+                matches = response.json().get("odds", [])
+                print(f"AllSportsAPI fetched {len(matches)} matches for {sport_key}")
                 opportunities.extend(process_matches(matches, sport_key, min_profit))
             except Exception as e:
-                print(f"Sportmonks fetch error for {sport_key}: {str(e)}")
-
-        # API-Football fetch
-        for sport_key in [s for s in sports_to_fetch if s in SPORTS["api_football"]]:
-            try:
-                url = "https://api-football-v1.p.rapidapi.com/v3/odds"
-                headers = {"X-RapidAPI-Key": API_FOOTBALL_KEY, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
-                params = {"league": sport_key.split("_")[-1]}  # Simplified - needs league ID mapping
-                response = await client.get(url, headers=headers, params=params)
-                if response.status_code != 200:
-                    print(f"API-Football error for {sport_key}: {response.status_code} - {response.text}")
-                    continue
-                data = response.json().get("response", [])
-                matches = [{"home_team": m["fixture"]["teams"]["home"]["name"], "away_team": m["fixture"]["teams"]["away"]["name"],
-                           "bookmakers": [{"key": b["bookmaker"]["name"], "markets": [{"key": "h2h", "outcomes": b["bets"][0]["values"]}]} 
-                                          for b in m["bookmakers"]]} for m in data]
-                print(f"API-Football fetched {len(matches)} matches for {sport_key}")
-                opportunities.extend(process_matches(matches, sport_key, min_profit))
-            except Exception as e:
-                print(f"API-Football fetch error for {sport_key}: {str(e)}")
-
-        # Odds API (sparingly - quota hit)
-        for sport_key in [s for s in sports_to_fetch if s in SPORTS["odds_api"]]:
-            try:
-                url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
-                params = {"apiKey": ODDS_API_KEY, "regions": "uk", "markets": "h2h", "oddsFormat": "decimal"}
-                response = await client.get(url, params=params)
-                if response.status_code == 429:
-                    print(f"Odds API quota exceeded for {sport_key}: {response.text}")
-                    break
-                if response.status_code != 200:
-                    print(f"Odds API error for {sport_key}: {response.status_code} - {response.text}")
-                    continue
-                matches = response.json()
-                print(f"Odds API fetched {len(matches)} matches for {sport_key}, Credits left: {response.headers.get('x-requests-remaining', 'unknown')}")
-                opportunities.extend(process_matches(matches, sport_key, min_profit))
-            except Exception as e:
-                print(f"Odds API fetch error for {sport_key}: {str(e)}")
+                print(f"AllSportsAPI fetch error for {sport_key}: {str(e)}")
 
     # Fallback test match
     if not opportunities:
@@ -109,23 +75,21 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str =
 def process_matches(matches, sport_key, min_profit):
     opportunities = []
     for match in matches:
-        home = match.get("home_team")
-        away = match.get("away_team")
-        bookmakers = match.get("bookmakers", [])
-        if not (home and away and bookmakers):
+        home = match.get("homeTeam", {}).get("name")
+        away = match.get("awayTeam", {}).get("name")
+        markets = match.get("markets", [])
+        if not (home and away and markets):
             continue
 
         best_odds = {}
-        for bookmaker in bookmakers:
-            key = bookmaker["key"]
-            for market in bookmaker.get("markets", []):
-                if market["key"] != "h2h":
-                    continue
-                for outcome in market.get("outcomes", []):
-                    team = outcome["name"] if "name" in outcome else outcome.get("value", {}).get("name")
-                    odds = outcome["price"] if "price" in outcome else float(outcome.get("value", {}).get("odd", 0))
-                    if team and odds and (team not in best_odds or odds > best_odds[team]["odds"]):
-                        best_odds[team] = {"bookmaker": key, "odds": odds}
+        for market in markets:
+            if market.get("name") != "Match Winner":  # Assuming h2h equivalent
+                continue
+            for outcome in market.get("selections", []):
+                team = outcome.get("name")
+                odds = float(outcome.get("odds", 0))
+                if team and odds and (team not in best_odds or odds > best_odds[team]["odds"]):
+                    best_odds[team] = {"bookmaker": "AllSportsAPI", "odds": odds}
 
         if len(best_odds) == 2:
             team1, team2 = list(best_odds.keys())
@@ -153,7 +117,7 @@ def process_matches(matches, sport_key, min_profit):
                     "stake2": stake2,
                     "estimatedProfit": estimated_profit,
                     "profitPercentage": profit_margin,
-                    "isLive": False  # Simplified - adjust per API if available
+                    "isLive": False  # Pre-match odds for now
                 })
     return opportunities
 
