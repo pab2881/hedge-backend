@@ -13,56 +13,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Expanded sports list with UK and European football, plus others
+# Full sports list: UK/Euro football, tennis, darts, golf, MMA, boxing, baseball, basketball
 SPORTS = [
     # UK Football
-    "soccer_epl",                # English Premier League
-    "soccer_england_championship", # EFL Championship
-    "soccer_england_league1",    # League One
-    "soccer_england_league2",    # League Two
-    "soccer_fa_cup",            # FA Cup
-    
+    "soccer_epl", "soccer_england_championship", "soccer_england_league1", "soccer_england_league2", "soccer_fa_cup",
     # European Football
-    "soccer_uefa_champs_league", # Champions League
-    "soccer_uefa_europa_league", # Europa League
-    "soccer_spain_la_liga",      # La Liga
-    "soccer_italy_serie_a",      # Serie A
-    "soccer_germany_bundesliga", # Bundesliga
-    "soccer_france_ligue_one",   # Ligue 1
-    "soccer_portugal_primeira_liga", # Primeira Liga
-    "soccer_netherlands_eredivisie", # Eredivisie
-    
+    "soccer_uefa_champs_league", "soccer_uefa_europa_league", "soccer_spain_la_liga", "soccer_italy_serie_a",
+    "soccer_germany_bundesliga", "soccer_france_ligue_one", "soccer_portugal_primeira_liga", "soccer_netherlands_eredivisie",
     # Basketball
-    "basketball_nba",            # NBA
-    "basketball_wnba",           # WNBA
-    "basketball_euroleague",     # Euroleague
-    "basketball_ncaab",          # NCAA Basketball
-    
+    "basketball_nba", "basketball_wnba", "basketball_euroleague", "basketball_ncaab",
     # Baseball
-    "baseball_mlb",              # MLB
-    "baseball_kbo",              # KBO League
-    "baseball_npb",              # NPB (Japan)
-    
+    "baseball_mlb", "baseball_kbo", "baseball_npb",
     # Tennis
-    "tennis_atp_us_open",        # ATP US Open
-    "tennis_wta_us_open",        # WTA US Open
-    "tennis_atp_french_open",    # ATP French Open
-    "tennis_wta_french_open",    # WTA French Open
-    "tennis_atp_wimbledon",      # ATP Wimbledon
-    "tennis_wta_wimbledon",      # WTA Wimbledon
-    
+    "tennis_atp_us_open", "tennis_wta_us_open", "tennis_atp_french_open", "tennis_wta_french_open",
+    "tennis_atp_wimbledon", "tennis_wta_wimbledon",
     # MMA & Boxing
-    "mma_mixed_martial_arts",    # MMA
-    "boxing",                    # Boxing
-    
+    "mma_mixed_martial_arts", "boxing",
     # Golf
-    "golf_pga_championship",     # PGA Championship
-    "golf_masters",              # Masters
-    "golf_us_open",             # US Open
-    
+    "golf_pga_championship", "golf_masters", "golf_us_open",
     # Darts
-    "darts_pdc_world_championship", # PDC World Championship
-    "darts_premier_league",     # Premier League Darts
+    "darts_pdc_world_championship", "darts_premier_league"
 ]
 
 API_KEY = "d9e11b9c538cb889fe1d99694728fe64"
@@ -87,6 +57,7 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str =
                     print(f"API error for {sport_key}: {response.status_code} - {response.text}")
                     continue
                 matches = response.json()
+                print(f"Fetched {len(matches)} matches for {sport_key}")
 
                 for match in matches:
                     home = match.get("home_team")
@@ -96,10 +67,13 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str =
                         print(f"Skipping {sport_key} match: missing data - {match}")
                         continue
 
+                    # Check if match is live
+                    is_live = match.get("inplay", False) or match.get("live", False)
+                    print(f"Match {home} vs {away} - Live: {is_live}")
+
                     best_odds = {}
                     for bookmaker in bookmakers:
                         key = bookmaker["key"].replace("_", " ").title()
-                        # Search all bookmakers for best odds
                         for market in bookmaker.get("markets", []):
                             if market["key"] != "h2h":
                                 continue
@@ -112,7 +86,7 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str =
                                         "odds": odds
                                     }
 
-                    if len(best_odds) == 2:  # Two-outcome logic for now
+                    if len(best_odds) == 2:  # Two-outcome logic
                         team1, team2 = list(best_odds.keys())
                         odds1 = best_odds[team1]["odds"]
                         odds2 = best_odds[team2]["odds"]
@@ -137,14 +111,15 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str =
                                 "stake1": stake1,
                                 "stake2": stake2,
                                 "estimatedProfit": estimated_profit,
-                                "profitPercentage": profit_margin
+                                "profitPercentage": profit_margin,
+                                "isLive": is_live  # Flag for frontend
                             })
 
             except Exception as e:
                 print(f"Error fetching {sport_key}: {str(e)}")
                 continue
 
-    # Fallback test match
+    # Fallback test match if no data
     if not opportunities:
         opportunities.append({
             "sport": "test",
@@ -157,7 +132,8 @@ async def get_hedge_opportunities(min_profit: float = Query(-10.0), sport: str =
             "stake1": 100,
             "stake2": 95.24,
             "estimatedProfit": 100,
-            "profitPercentage": 2.38
+            "profitPercentage": 2.38,
+            "isLive": False
         })
 
     return opportunities
